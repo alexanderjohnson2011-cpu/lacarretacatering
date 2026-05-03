@@ -531,6 +531,15 @@ h2.title em { font-style: italic; color: var(--marigold); }
   transition: all 0.25s var(--ease); cursor: pointer; margin-top: 4px;
 }
 .form-submit:hover { background: var(--marigold-lt); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(224,155,45,0.3); }
+.form-submit:disabled { cursor: default; transform: none; box-shadow: none; }
+.form-error {
+  margin-top: 12px; padding: 10px 14px;
+  background: rgba(190,63,98,0.15); border: 1px solid var(--rose);
+  border-radius: 8px; color: var(--rose-lt); font-size: 13px;
+  display: none;
+}
+/* Honeypot — hide from real users, leave it focusable for bots */
+.hp-field { position: absolute; left: -9999px; opacity: 0; pointer-events: none; }
 
 @media (max-width: 768px) {
   .contact-grid { grid-template-columns: 1fr; gap: 40px; }
@@ -989,25 +998,42 @@ h2.title em { font-style: italic; color: var(--marigold); }
 
       <div class="contact-form">
         <p style="font-family:var(--font-display); font-size:22px; color:var(--cream); margin-bottom:24px;">Tell her about your event</p>
-        <form onsubmit="handleSubmit(event)">
+        <!--
+          NETLIFY FORM
+          - name="contact" registers the form with Netlify
+          - data-netlify="true" enables form handling
+          - netlify-honeypot points to a hidden field that bots fill in (and humans don't)
+          - The hidden form-name input is required so Netlify's parser can match POSTs back to this form
+        -->
+        <form
+          name="contact"
+          method="POST"
+          data-netlify="true"
+          netlify-honeypot="bot-field"
+          onsubmit="handleSubmit(event)"
+        >
+          <input type="hidden" name="form-name" value="contact">
+          <p class="hp-field">
+            <label>Don't fill this out if you're human: <input name="bot-field" tabindex="-1" autocomplete="off"></label>
+          </p>
           <div class="form-row">
             <div class="form-group">
               <label for="name">Your Name</label>
-              <input type="text" id="name" placeholder="Your name" required>
+              <input type="text" id="name" name="name" placeholder="Your name" required>
             </div>
             <div class="form-group">
               <label for="phone">Phone / Email</label>
-              <input type="text" id="phone" placeholder="Best way to reach you" required>
+              <input type="text" id="phone" name="phone-or-email" placeholder="Best way to reach you" required>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="date">Event Date</label>
-              <input type="date" id="date">
+              <input type="date" id="date" name="event-date">
             </div>
             <div class="form-group">
               <label for="guests">Guests</label>
-              <select id="guests">
+              <select id="guests" name="guest-count">
                 <option value="">Approx. how many?</option>
                 <option>Under 20</option>
                 <option>20–50</option>
@@ -1019,7 +1045,7 @@ h2.title em { font-style: italic; color: var(--marigold); }
           </div>
           <div class="form-group">
             <label for="style">What are you interested in?</label>
-            <select id="style">
+            <select id="style" name="interest">
               <option value="">Select one</option>
               <option>Catering only</option>
               <option>Bar + Catering Bundle</option>
@@ -1029,9 +1055,10 @@ h2.title em { font-style: italic; color: var(--marigold); }
           </div>
           <div class="form-group">
             <label for="message">Tell her about your event</label>
-            <textarea id="message" placeholder="Theme, vibe, dietary needs, anything that helps..."></textarea>
+            <textarea id="message" name="message" placeholder="Theme, vibe, dietary needs, anything that helps..."></textarea>
           </div>
           <button type="submit" class="form-submit">Send My Inquiry</button>
+          <div class="form-error" id="form-error">Something went wrong sending your inquiry. Please try again, or text Denise directly at (818) 825-1031.</div>
         </form>
       </div>
     </div>
@@ -1071,14 +1098,43 @@ h2.title em { font-style: italic; color: var(--marigold); }
     btn.classList.add('active');
   }
 
-  // ---- Form submit ----
+  // ---- Form submit (AJAX → Netlify Forms) ----
+  // We POST a urlencoded body to "/" (the page URL). Netlify intercepts requests
+  // that include "form-name" and routes the submission to the matching form.
+  // This keeps the user on the page and lets us show the inline success state.
+  function encodeFormData(formData) {
+    return new URLSearchParams(formData).toString();
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
-    const btn = e.target.querySelector('.form-submit');
-    btn.textContent = '✓ Sent! Denise will be in touch soon.';
-    btn.style.background = 'var(--jade)';
-    btn.style.color = 'var(--cream)';
+    const form = e.target;
+    const btn = form.querySelector('.form-submit');
+    const errorEl = document.getElementById('form-error');
+    errorEl.style.display = 'none';
+
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Sending…';
     btn.disabled = true;
+
+    fetch('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: encodeFormData(new FormData(form))
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('Network response was not ok (' + response.status + ')');
+        btn.textContent = '✓ Sent! Denise will be in touch soon.';
+        btn.style.background = 'var(--jade)';
+        btn.style.color = 'var(--cream)';
+        form.reset();
+      })
+      .catch(err => {
+        console.error('Form submission failed:', err);
+        btn.textContent = originalLabel;
+        btn.disabled = false;
+        errorEl.style.display = 'block';
+      });
   }
 
   // ---- Nav scroll tint ----
